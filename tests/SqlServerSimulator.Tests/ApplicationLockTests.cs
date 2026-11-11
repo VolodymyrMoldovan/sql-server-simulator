@@ -78,6 +78,33 @@ public class ApplicationLockTests
     }
 
     [TestMethod]
+    public void GetAppLock_TransactionOwner_InATriggerOfAnAutoCommitStatement_IsGrantedAndEndsWithTheStatement()
+    {
+        var simulation = new Simulation();
+        simulation.ExecuteNonQuery("""
+            create table t (k int primary key, name nvarchar(20));
+            create table log (r int);
+            """);
+        simulation.ExecuteNonQuery("""
+            create trigger tr_t on t instead of update as
+            begin
+                set nocount on;
+                declare @got int;
+                exec @got = sp_getapplock @Resource = N'record', @LockMode = N'Exclusive', @LockOwner = N'Transaction';
+                insert log values (@got);
+                update x set name = i.name from t x join inserted i on i.k = x.k;
+            end
+            """);
+        simulation.ExecuteNonQuery("insert t values (1, N'a')");
+
+        simulation.ExecuteNonQuery("update t set name = N'b' where k = 1");
+
+        AreEqual(0, simulation.ExecuteScalar("select r from log"));
+        AreEqual("b", simulation.ExecuteScalar("select name from t"));
+        AreEqual(0, simulation.ExecuteScalar("select count(*) from sys.dm_tran_locks where resource_type = 'APPLICATION' and request_session_id = @@spid"));
+    }
+
+    [TestMethod]
     public void GetAppLock_Granted_ReturnsZero()
     {
         using var connection = new Simulation().CreateOpenConnection();

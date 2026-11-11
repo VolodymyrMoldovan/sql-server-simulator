@@ -80,7 +80,11 @@ public partial class Simulation
         // Transaction owner without an active transaction: Msg 15626 and
         // -999, where APPLOCK_MODE / APPLOCK_TEST raise Msg 3918.
         var transaction = connection.CurrentTransaction;
-        if (isTransaction && transaction is null)
+        // A trigger under an auto-commit statement runs in that statement's
+        // transaction: a Transaction-owned lock taken there joins the
+        // statement's unit and ends with it, as on SQL Server.
+        var statementUnit = transaction is null ? connection.TriggerStatementLocks : null;
+        if (isTransaction && transaction is null && statementUnit is null)
         {
             foreach (var step in AppLockRefusal(batch, returnCodeVariableName, Printed(SimulatedSqlException.TransactionalAppLockWithoutTransactionMessage(batch))))
                 yield return step;
@@ -117,7 +121,11 @@ public partial class Simulation
         if (code >= 0)
         {
             var hold = new AppLockHold(principalId, resourceName, resource, mode);
-            if (isTransaction)
+            if (isTransaction && transaction is null)
+            {
+                statementUnit!.Add((resource, mode, owner));
+            }
+            else if (isTransaction)
             {
                 // The generic HeldLocks entry is what releases the manager
                 // hold at transaction end; the app-lock ledger carries the
