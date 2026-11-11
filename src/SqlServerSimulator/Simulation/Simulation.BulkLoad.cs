@@ -155,8 +155,18 @@ partial class Simulation
 #pragma warning restore CA2100
         var batch = new BatchContext(command);
         batch.CurrentStatement.UtcNow = DateTime.UtcNow;
-        var outcome = RunMutation(batch.Parser, context => this.BulkInsertRows(plan, rows, context));
-        return outcome.RecordsAffected;
+        try
+        {
+            var outcome = RunMutation(batch.Parser, context => this.BulkInsertRows(plan, rows, context));
+            return outcome.RecordsAffected;
+        }
+        finally
+        {
+            // The load runs outside the batch dispatch loop, whose finally ends
+            // every other statement: release what it locked here, or its
+            // auto-commit row and page locks outlive it and block every reader.
+            batch.ReleaseStatementSchemaLocks();
+        }
     }
 
     private SimulatedNonQuery BulkInsertRows(BulkInsertPlan plan, List<SqlValue[]> rows, ParserContext context)

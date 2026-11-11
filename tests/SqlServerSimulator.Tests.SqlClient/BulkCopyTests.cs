@@ -129,6 +129,25 @@ public sealed class BulkCopyTests
     }
 
     [TestMethod]
+    public async Task AutoCommitLoad_ReleasesItsLocks_SoAnotherSessionReadsTheRows()
+    {
+        var (_, listener, connection) = await SetUpAsync("create table t (id int primary key, name nvarchar(20))", TestContext.CancellationToken);
+        await using var listenerScope = listener;
+        await using var connectionScope = connection;
+
+        var data = Table(("id", typeof(int)), ("name", typeof(string)));
+        for (var i = 1; i <= 50; i++)
+            _ = data.Rows.Add(i, $"n{i}");
+        using (var bulk = new SqlBulkCopy(connection) { DestinationTableName = "t" })
+            await bulk.WriteToServerAsync(data, TestContext.CancellationToken);
+
+        AreEqual(0, Scalar(connection, "select count(*) from sys.dm_tran_locks where request_session_id = @@spid and resource_type in ('KEY', 'PAGE', 'RID')"));
+        await using var reader = await Wire.OpenAsync(listener, TestContext.CancellationToken);
+        using var command = new SqlCommand("select count(*) from t", reader) { CommandTimeout = 5 };
+        AreEqual(50, command.ExecuteScalar());
+    }
+
+    [TestMethod]
     public async Task DataReaderSource_InsertsRows()
     {
         var (simulation, listener, connection) = await SetUpAsync("create table dest (id int, name nvarchar(20))", TestContext.CancellationToken);
