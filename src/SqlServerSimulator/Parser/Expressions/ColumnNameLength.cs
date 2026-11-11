@@ -85,10 +85,11 @@ internal sealed class ColLength : Expression
             return SqlValue.Null(SqlType.SmallInt);
         var tableNameStr = tn.CoerceTo(SqlType.NVarchar).AsString;
         var colNameStr = cn.CoerceTo(SqlType.NVarchar).AsString;
-        var parts = tableNameStr.Split('.');
-        var multiPart = new MultiPartName(parts[0]);
-        for (var i = 1; i < parts.Length; i++)
-            multiPart = multiPart.WithAddedPart(parts[i]);
+        // The name parses as OBJECT_ID's does: bracketed or quoted parts, as in
+        // COL_LENGTH(N'[dbo].[T]', N'C'), name the table (probed against SQL
+        // Server 2022: 'dbo.[T]' and '[dbo].[T]' answer as 'dbo.T' does).
+        if (!ObjectId.TryParseObjectName(tableNameStr, out var multiPart))
+            return SqlValue.Null(SqlType.SmallInt);
         // A catalog view answers too — `COL_LENGTH('sys.objects', 'name')` is
         // 256 (probe-confirmed 2026-09-23) — and so does any other object with
         // columns, a view or a table-valued function (probed 2026-10-02).

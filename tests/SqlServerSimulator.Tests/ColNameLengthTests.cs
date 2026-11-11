@@ -12,6 +12,12 @@ namespace SqlServerSimulator;
 public sealed class ColNameLengthTests
 {
     [TestMethod]
+    public void ColLength_BracketedTableName_ResolvesLikeObjectId()
+        => AreEqual("40|40|40", new Simulation().ExecuteScalar(
+            "create table t (id int, name nvarchar(20)); "
+            + "select concat(col_length('dbo.[t]', 'name'), '|', col_length('[dbo].[t]', 'name'), '|', col_length('[t]', 'name'))"));
+
+    [TestMethod]
     public void ColName_FirstColumn_ReturnsName()
         => AreEqual("id", new Simulation().ExecuteScalar("create table t (id int, name varchar(50)); select col_name(object_id('t'), 1)"));
 
